@@ -1,1 +1,1 @@
-# JH_biobank_paper_2023
+# R code for the RNAseq data analysis
