@@ -1,3 +1,3 @@
 # R code for the RNAseq data analysis
 ## 1. Run the code in Rcode
-## 2. Using the reference if needed
+## 2. Using the data in the reference folder if needed
