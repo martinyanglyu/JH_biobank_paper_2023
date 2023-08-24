@@ -1,0 +1,174 @@
+---
+title: "RNAseq data raw counts "
+author: "Yang Lyu"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    keep_tex: true
+    latex_engine: pdflatex
+    fig_caption: yes
+    highlight: haddock
+    number_sections: yes
+    #latex_engine: xelatex
+
+knit: (
+  function(inputFile, encoding) { 
+      pSubTitle <- paste(Sys.Date(), "JH paper RNAseq data" )
+     
+    rmarkdown::render( 
+      input       = inputFile, 
+      encoding    = encoding, 
+      params      = list(sub_title = pSubTitle),      
+      output_file = pSubTitle,
+      output_dir="/Volumes/lyu.yang/MAC_1/R/Project/11_JH_biobank_paper/Output/RNAseq/Github" ) 
+       }
+       
+       )
+      
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo =F,message = F,warning = F)
+```
+
+
+# RNAseq data loading
+```{r,include=F}
+# set the path for your data
+
+getwd()
+rm(list=ls())
+#dir.create("/Volumes/lyu.yang/MAC_1/R/Project/10_JH-2002-shURB5/Output")
+Path="/Volumes/lyu.yang/MAC_1/R/Project/11_JH_biobank_paper"
+Rcode_path=file.path(Path,"Rcode")
+Rdata_path=file.path(Path,"Rdata")
+Rawdata_path=file.path(Path,"Rawdata")
+dir.create(Rawdata_path)
+Public_database_path="/Volumes/lyu.yang/MAC_1/R/Public_database"
+#dir(Public_database_path)
+dir.create(Rdata_path)
+dir.create(Rawdata_path)
+library(dplyr)
+library(ggplot2)
+ 
+```
+
+```{r}
+load(file.path(Public_database_path,"reference","Protein_coding_genelist.rdata"))
+```
+
+
+```{r}
+
+Rawcounts_synapse=read.csv(file.path(Rawdata_path, "RNAseq_raw_counts_file_synapse_ID.csv"))
+knitr::kable(Rawcounts_synapse,caption = "Synapse ID for the raw counts files")%>%kableExtra::kable_styling(latex_options = "hold_position")
+```
+
+
+```{r}
+# Function used
+matrix.please<-function(x) {
+  m<-as.matrix(x[,-1])
+  rownames(m)<-x[,1]
+  m
+}
+```
+
+
+
+```{r}
+# loading annotation data for RNAseq data
+JH_paper_anno_RNAseq=read.csv(file.path(Rawdata_path, "RNAseq_annotation_batch1_to_3.csv"))
+
+```
+
+# Download the Rawcounts data  by using its ID from synapse
+```{r}
+
+#Counts_files=data.frame(path=counts_files) #The path for the four files named with "salmon.merged.gene_counts.tsv"` for different batches
+
+#Counts_files=data.frame(path="your files path",batch=Rawcounts_synapse)
+```
+```{r}
+# counts_file=list()
+# for (i in list.dirs("/Volumes/H_Drive_3/JH_biobank_RNAseq_Synapse/Raw_BAM",recursive=F)){
+#   new_path=file.path(i,"Counts")
+#   
+#  counts_file[[i]]=list.files(new_path,pattern="salmon.merged.gene_counts.tsv",recursive = F,full.names = T) 
+#   
+# }
+# 
+# Counts_files=as.data.frame(counts_file)%>%t()%>%as.data.frame() %>%setNames(c("path"))%>%mutate(batch=names(counts_file))%>%dplyr::filter(!grepl("batch3",path))%>%mutate(batch=gsub(".*\\/","",batch))
+
+```
+
+
+```{r}
+# Merge the counts and clean the data by removing duplicated genes and selecting protein-coding genes
+Merge_couts=Counts_files$path
+
+Gene_name=readr::read_tsv(Merge_couts[1])%>%.$gene_name
+
+Count_list=list()
+for (i in Merge_couts){
+  Batch=stringr::str_split(i,"/")%>%unlist()%>%.[grepl("batch",.)]
+  data=readr::read_tsv(i)
+  data2=data[,3:ncol(data)]%>%as.data.frame()
+  colnames(data2)=gsub("\\.","-",colnames(data2))
+  rownames(data2)=data$gene_id
+  Count_list[[Batch]]=data2
+
+}
+
+Count_all=do.call("cbind" ,Count_list)
+#
+Count_sample=data.frame(RNAseq_ID=colnames(Count_all)) %>%  tidyr::separate(RNAseq_ID,c("batch","RNA_ID2"),sep="\\.",remove=F)%>%dplyr::filter(batch!="WU_batch3")%>%
+mutate(RNA_ID2=gsub("X","", RNA_ID2))%>%  right_join(.,JH_paper_anno_RNAseq,by="RNA_ID2")
+Count_sample$parentBiospecimenID[duplicated(Count_sample$parentBiospecimenID)]
+
+Count_all_clean=Count_all %>%.[,Count_sample$RNAseq_ID]
+
+Parent_ID=Count_sample %>%.[match(colnames(Count_all_clean),.$RNAseq_ID),]
+
+Parent_ID$RNAseq_ID==colnames(Count_all_clean)
+Count_all_clean_rename=Count_all_clean
+colnames(Count_all_clean_rename)=Parent_ID$parentBiospecimenID
+
+dir.create(file.path(Rawdata_path, "RNAseq"))
+```
+
+
+```{r}
+write.csv(Count_all_clean_rename,file=file.path(Rawdata_path, "RNAseq","52_JH_Tumor_raw_counts.csv"))
+```
+
+```{r}
+All_genes_count_template=readr::read_tsv(file.path("/Volumes/lyu.yang/MAC_1/R/Project/10_JH-2002-shURB5/Rawdata","all.gene_counts.tsv"  ))
+Protein_coding_genelist=All_genes_count_template%>%dplyr::filter(gene_biotype=="protein_coding")%>%.$external_gene_name
+```
+
+
+```{r}
+#write.csv(Count_sample,file=file.path(Rawdata_path,"52_JH_Tumor_proteincoding_salmon_counts.csv"))
+Count_sample_clean=Count_sample%>%mutate(File_name=parentBiospecimenID)%>%select(-batch.x)%>%rename(batch="batch.y")%>%mutate(batch=gsub("WU_batch1&","",batch))
+Count_sample_clean2=Count_sample_clean%>%select(-RNA_ID2)
+
+Count_sample_clean2$File_name==colnames(Count_all_clean_rename)
+
+setdiff(colnames(Count_all_clean_rename), Count_sample_clean2$File_name)
+write.csv(Count_sample_clean2,file=file.path(Rawdata_path,"RNAseq","52_JH_Tumor_RNAseq_annotation.csv"))
+
+Count_all_clean_rename_rm_dup=Count_all_clean_rename %>%mutate(gene_name=Gene_name) %>% subset(gene_name%in% Protein_coding_genelist) %>% group_by(gene_name) %>%summarise_all(mean)%>%as.data.frame()%>%matrix.please()
+```
+
+
+```{r}
+write.csv(Count_all_clean_rename_rm_dup,file=file.path(Rawdata_path,"RNAseq","52_JH_Tumor_proteincoding_salmon_counts.csv"))
+```
+
+```{r}
+knitr::knit_exit()
+```
+ 
+
